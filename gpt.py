@@ -42,10 +42,9 @@ def get_batch(split):
 @torch.no_grad()
 def estimate_loss():
     out = {}
-    model = GptLanguageModel(vocab_size)
     for split in ['train', 'val_data']:
         loss_per_iter = torch.zeros(eval_iters)
-        for step in eval_iters:
+        for step in range(eval_iters):
             input, target = get_batch(split)
             logits, loss = model(input, target)
             loss_per_iter[step] = loss
@@ -56,7 +55,7 @@ def estimate_loss():
 class GptLanguageModel(nn.Module):
     def __init__(self, vocab_size):
         super().__init__()
-        # if we have (65,65) embedding lookup table, each logit represents one of the characters
+        # Each row represents a current token; its columns score possible next tokens.
         self.embedding_table = nn.Embedding(vocab_size, vocab_size)
 
     def forward(self, idx, targets=None):
@@ -74,9 +73,11 @@ class GptLanguageModel(nn.Module):
     def generate(self, idx, max_tokens):
         for _ in range(max_tokens):
             logits, loss = self(idx) 
-            logits = logits[:, -1, :] # this is taking the last row from the time dimension (B*C) (4,8,65) -> (4,65)
+            # Use the final time step to predict what follows the current sequence.
+            logits = logits[:, -1, :]
             probs = F.softmax(logits, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1)
+            # Append the sampled token along the sequence dimension.
             idx = torch.cat((idx, next_token), dim=1)
         return idx
 
@@ -97,4 +98,9 @@ for iter in range(max_iters):
     loss.backward()
     optimizer.step()
 
-    
+input, output = get_batch('train')
+generated_tokens = model.generate(input, max_tokens=150)   
+for _ in range(generated_tokens.shape[0]):
+    d = decode(generated_tokens[_].tolist())
+    print(d)
+
